@@ -73,43 +73,100 @@ def _validate(username: str, password: str) -> None:
 # --- Signup / login --------------------------------------------------------
 
 
-def create_user(username: str, password: str,
-                starting_capital: float | None = None) -> dict[str, Any]:
-    username = (username or "").strip()
-    display = username
-    _validate(username, password or "")
-
-    # Case-insensitive uniqueness: "Tigran" and "tigran" must not both exist.
-    existing = userstore.query_one(
-        "SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (username,))
-    if existing:
-        raise AuthError("That username is already taken.")
-
+def _check_capital(starting_capital: float | None) -> float:
     capital = float(starting_capital or config.STARTING_CAPITAL)
     if not (config.CAPITAL_MIN <= capital <= config.CAPITAL_MAX):
         raise AuthError(
             f"Starting capital must be between ${config.CAPITAL_MIN:,.0f} "
             f"and ${config.CAPITAL_MAX:,.0f}."
         )
+    return capital
 
-    ts = now_ms()
-    user_id = userstore.insert_returning_id(
-        "INSERT INTO users (username, display_name, password_hash, created_ts) "
-        "VALUES (?,?,?,?)",
-        (username, display, hash_password(password), ts),
-    )
+
+def _seed_portfolio(user_id: int, capital: float, ts: int) -> None:
     userstore.execute(
         "INSERT INTO portfolios (user_id, cash, starting_capital, created_ts) "
         "VALUES (?,?,?,?)",
         (user_id, capital, capital, ts),
     )
+    # Seed the curve so charts start at the opening balance rather than empty.
     userstore.execute(
         "INSERT INTO user_equity (user_id, ts, cash, invested, market_value, "
         "total, realized, fees) VALUES (?,?,?,?,?,?,?,?)",
         (user_id, ts, capital, 0.0, 0.0, capital, 0.0, 0.0),
     )
+
+
+def _taken(username: str) -> bool:
+    # Case-insensitive: "Tigran" and "tigran" must not both exist.
+    return userstore.query_one(
+        "SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (username,)) is not None
+
+
+def create_guest(starting_capital: float | None = None) -> dict[str, Any]:
+    """An unnamed account so a first-time visitor can trade straight away."""
+    capital = _check_capital(starting_capital)
+    ts = now_ms()
+    # Random suffix rather than a counter: the username is never shown, and a
+    # sequential one would leak how many people have used the site.
+    username = f"guest_{secrets.token_hex(8)}"
+    user_id = userstore.insert_returning_id(
+        "INSERT INTO users (username, display_name, password_hash, is_guest, created_ts) "
+        "VALUES (?,?,?,?,?)",
+        (username, "Guest", "!", 1, ts),   # "!" can never match a real hash
+    )
+    _seed_portfolio(user_id, capital, ts)
+    return {"id": user_id, "username": username, "display_name": "Guest",
+            "is_guest": True}
+
+
+def claim_account(user_id: int, username: str, password: str) -> dict[str, Any]:
+    """Convert a guest row into a real account, keeping its portfolio.
+
+    Done in place rather than by creating a second row, so everything the guest
+    already built -- holdings, trade history, equity curve -- carries over.
+    """
+    username = (username or "").strip()
+    _validate(username, password or "")
+
+    row = userstore.query_one("SELECT is_guest FROM users WHERE id = ?", (user_id,))
+    if not row:
+        raise AuthError("That session is no longer valid. Please reload the page.")
+    if not row["is_guest"]:
+        raise AuthError("You are already signed in to an account.")
+    if _taken(username):
+        raise AuthError("That username is already taken.")
+
+    userstore.execute(
+        "UPDATE users SET username = ?, display_name = ?, password_hash = ?, "
+        "is_guest = 0 WHERE id = ?",
+        (username, username, hash_password(password), user_id),
+    )
+    log.info("guest %s claimed as %s", user_id, username)
+    return {"id": user_id, "username": username, "display_name": username,
+            "is_guest": False}
+
+
+def create_user(username: str, password: str,
+                starting_capital: float | None = None) -> dict[str, Any]:
+    username = (username or "").strip()
+    display = username
+    _validate(username, password or "")
+
+    if _taken(username):
+        raise AuthError("That username is already taken.")
+
+    capital = _check_capital(starting_capital)
+    ts = now_ms()
+    user_id = userstore.insert_returning_id(
+        "INSERT INTO users (username, display_name, password_hash, is_guest, created_ts) "
+        "VALUES (?,?,?,?,?)",
+        (username, display, hash_password(password), 0, ts),
+    )
+    _seed_portfolio(user_id, capital, ts)
     log.info("account created: %s (id=%s)", username, user_id)
-    return {"id": user_id, "username": username, "display_name": display}
+    return {"id": user_id, "username": username, "display_name": display,
+            "is_guest": False}
 
 
 def _dummy_hash() -> str:

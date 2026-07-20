@@ -72,11 +72,16 @@ DIALECT = _Dialect(IS_POSTGRES)
 def _schema() -> str:
     d = DIALECT
     return f"""
+-- Guests are real rows with is_guest = 1 and no usable password. A visitor can
+-- trade immediately, and signing up later converts their existing row in place
+-- so the portfolio they already built carries over instead of being discarded.
+-- Guests are excluded from the leaderboard.
 CREATE TABLE IF NOT EXISTS users (
     id            {d.serial_pk},
     username      TEXT NOT NULL UNIQUE,
     display_name  TEXT NOT NULL,
     password_hash TEXT NOT NULL,
+    is_guest      INTEGER NOT NULL DEFAULT 0,
     created_ts    {d.big_int} NOT NULL
 );
 
@@ -259,11 +264,14 @@ def user_for_session(token: str | None) -> dict[str, Any] | None:
     if not token:
         return None
     row = query_one(
-        "SELECT u.id, u.username, u.display_name, u.created_ts "
+        "SELECT u.id, u.username, u.display_name, u.is_guest, u.created_ts "
         "FROM sessions s JOIN users u ON u.id = s.user_id "
         "WHERE s.token = ? AND s.expires_ts > ?",
         (token, now_ms()),
     )
+    if row:
+        # SQLite stores this as 0/1; normalise so callers can trust the type.
+        row["is_guest"] = bool(row["is_guest"])
     return row
 
 
