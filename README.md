@@ -43,6 +43,23 @@ deploys it to Render's free tier in a few clicks:
 2. Sign in (free), confirm, and Render builds and starts the service
 3. Your instance is live at `https://<your-service>.onrender.com`
 
+### Add a CoinGecko key when deploying
+
+Running locally needs no keys at all. On Render it is worth one extra minute:
+CoinGecko rate-limits keyless requests **per client IP**, and Render's free
+tier egresses through shared addresses that are throttled on reputation, so the
+call fails there however slowly you poll. Prices are unaffected — Binance and
+Hyperliquid carry those — but market cap and rank come back empty and the
+Structure axis then scores on volume trend and spread alone.
+
+1. Get a free **Demo** key at <https://www.coingecko.com/en/developers/dashboard>
+2. In Render: **Environment → Add Environment Variable**
+3. Key `COINGECKO_API_KEY`, value your key. Leave `COINGECKO_PLAN` as `demo`.
+
+CoinGecko answers `200` to an *invalid* key rather than rejecting it, so a typo
+looks exactly like a rate limit. The startup log prints which mode is active —
+`coingecko auth: demo key ...abcd` or `coingecko auth: keyless` — check it there.
+
 Free-tier honesty notes:
 
 - The instance **sleeps after ~15 minutes idle** and wakes on the next visit
@@ -54,13 +71,17 @@ Free-tier honesty notes:
   shared public URL shares one portfolio among its visitors. Per-visitor
   portfolios are a planned next step.
 
-## Data sources — no API keys required
+## Data sources — no API keys required to run locally
 
 | Source | Role |
 |---|---|
 | Binance public REST | Prices, 24h stats, hourly + daily candles, order book — 14 of 15 assets |
 | Hyperliquid public API | **HYPE only** — it is not listed on Binance spot (`HYPEUSDT` → `-1121`) |
 | CoinGecko free | Market capitalization, basket rank, volume; price fallback |
+
+All three work keyless from a home connection. The one optional key is
+`COINGECKO_API_KEY`, which only matters on shared cloud hosting — see
+[Add a CoinGecko key when deploying](#add-a-coingecko-key-when-deploying).
 
 ## The rating system
 
