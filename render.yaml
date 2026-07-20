@@ -17,3 +17,13 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.4
+      # Keyless CoinGecko is rate-limited per client IP, and Render's shared
+      # free-tier egress is throttled on reputation regardless of our cadence,
+      # so market cap and rank come back empty. A free demo key moves the quota
+      # onto the key and fixes it. sync:false makes Render prompt for the value
+      # instead of storing it in this file.
+      - key: COINGECKO_API_KEY
+        sync: false
+      # "demo" (free, default) or "pro" -- they use different hosts and headers.
+      - key: COINGECKO_PLAN
+        value: demo

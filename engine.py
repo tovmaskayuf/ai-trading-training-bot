@@ -22,6 +22,7 @@ import providers
 import settings
 from analytics import indicators as ind
 from analytics import rating
+from providers import coingecko
 from trading import manual
 
 log = logging.getLogger("engine")
@@ -215,6 +216,10 @@ async def run_cycle(cycle: int) -> None:
 
 async def bootstrap() -> None:
     """First-run backfill so ratings and charts are useful within one cycle."""
+    # Logged because a key that failed to load looks exactly like an ordinary
+    # rate limit from the outside -- 429s with no hint that auth never applied.
+    log.info("coingecko auth: %s", coingecko.key_status())
+
     hourly = db.query_one(
         "SELECT COUNT(*) AS n FROM candles WHERE interval=?", (config.CANDLE_INTERVAL,))
     if (hourly or {}).get("n", 0) == 0:

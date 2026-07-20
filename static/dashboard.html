@@ -251,7 +251,11 @@ header {
 .dot { width:7px; height:7px; flex:none; border-radius:50%;
   background:var(--good); animation:pulse 2.4s infinite; }
 .dot.off { background:var(--text-muted); animation:none; }
-.dot.err { background:var(--critical); animation:none; }
+/* Named .bad, not .err, on purpose: there is a generic .err further down for
+   form messages (min-height:16px, margin-top:9px). A dot classed "dot err"
+   picked those up, so its 7px height was overridden to 16px and it rendered as
+   a tall oval, nudged out of line with the label. Do not rename this to .err. */
+.dot.bad { background:var(--critical); animation:none; }
 @keyframes pulse {
   0% { box-shadow:0 0 0 0 color-mix(in srgb,var(--good) 55%,transparent); }
   70% { box-shadow:0 0 0 7px transparent; } 100% { box-shadow:0 0 0 0 transparent; }
@@ -1804,7 +1808,7 @@ async function loadOverview() {
   let d;
   try { d = await api('/api/overview'); }
   catch {
-    $('#dot').className = 'dot err'; $('#statusText').textContent = t('connecting'); return;
+    $('#dot').className = 'dot bad'; $('#statusText').textContent = t('connecting'); return;
   }
   S.assets = d.assets;
   S.thresholds = d.thresholds;
@@ -1820,7 +1824,7 @@ async function loadOverview() {
 
   const errs = d.errors || [];
   // Don't paint over a dropped stream: connect() owns the dot while offline.
-  if (!S.disconnected) $('#dot').className = 'dot' + (errs.length ? ' err' : '');
+  if (!S.disconnected) $('#dot').className = 'dot' + (errs.length ? ' bad' : '');
   updateStatusText();
   $('#subtitle').textContent =
     `${followedAssets().length}/${S.assets.length} · ${S.cycleSeconds}s`;
@@ -1859,7 +1863,7 @@ function connect() {
   es.onopen = () => { S.disconnected = false; $('#dot').className = 'dot'; updateStatusText(); };
   es.onerror = () => {
     S.disconnected = true;
-    $('#dot').className = 'dot err';
+    $('#dot').className = 'dot bad';
     updateStatusText();
     es.close();
     setTimeout(connect, 5000);
