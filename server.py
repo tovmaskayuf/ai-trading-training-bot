@@ -592,6 +592,15 @@ async def health() -> dict[str, Any]:
         "candles_stored": db.query_one(
             "SELECT COUNT(*) AS n FROM candles WHERE interval=?",
             (config.CANDLE_INTERVAL,))["n"],
+        # "postgres" == accounts survive restarts. "sqlite" == the user store
+        # fell back to the instance's ephemeral disk and every account,
+        # portfolio and standing is lost on restart and on idle spin-down.
+        # Indistinguishable from the outside otherwise, and the difference only
+        # becomes visible once the data is already gone.
+        "store_backend": userstore.backend(),
+        "accounts_durable": userstore.backend() == "postgres",
+        "registered_players": (userstore.query_one(
+            "SELECT COUNT(*) AS n FROM users WHERE is_guest = 0") or {}).get("n", 0),
     }
 
 
