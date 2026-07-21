@@ -440,6 +440,12 @@ async def health() -> dict[str, Any]:
         # CoinGecko 401s with error_code 10002 -- it is a *missing* one that
         # hides.)
         "coingecko_auth": coingecko.auth_mode(),
+        # Candle failures do not stop a cycle, but they empty three of the four
+        # rating axes, so they need to be visible from outside the log.
+        "candle_errors": engine.STATE.get("_candle_errors", []),
+        "candles_stored": db.query_one(
+            "SELECT COUNT(*) AS n FROM candles WHERE interval=?",
+            (config.CANDLE_INTERVAL,))["n"],
     }
 
 

@@ -78,6 +78,7 @@ async def refresh_candles(interval: str = config.CANDLE_INTERVAL,
     against the same host.
     """
     sem = asyncio.Semaphore(CANDLE_CONCURRENCY)
+    problems: list[str] = []
 
     async def one(symbol: str) -> tuple[str, list[dict]] | None:
         async with sem:
@@ -85,8 +86,10 @@ async def refresh_candles(interval: str = config.CANDLE_INTERVAL,
                 rows = await providers.fetch_candles(symbol, interval=interval, limit=limit)
             except Exception as e:
                 log.warning("candle refresh (%s) failed for %s: %s", interval, symbol, e)
+                problems.append(f"{symbol}: {e}")
                 return None
         if not rows:
+            problems.append(f"{symbol}: empty response")
             return None
         # DB write stays outside the semaphore-held network section but on the
         # loop thread, so it remains serialised with every other writer.
@@ -94,6 +97,15 @@ async def refresh_candles(interval: str = config.CANDLE_INTERVAL,
         return symbol, _candles_as_dicts(rows)
 
     results = await asyncio.gather(*(one(s) for s in config.SYMBOLS))
+
+    # Surfaced, not just logged: a candle failure silently empties the momentum,
+    # risk and relative axes while prices keep flowing, so the dashboard looks
+    # half-broken with nothing to explain why.
+    STATE["_candle_errors"] = problems[:6]
+    if problems:
+        log.warning("candle refresh (%s): %d/%d failed", interval,
+                    len(problems), len(config.SYMBOLS))
+
     return {sym: rows for r in results if r for sym, rows in (r,)}
 
 
