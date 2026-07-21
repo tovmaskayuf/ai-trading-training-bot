@@ -69,7 +69,12 @@ def _candles_as_dicts(rows: list[tuple]) -> list[dict]:
     return [dict(zip(("open_time", "o", "h", "l", "c", "v"), r)) for r in rows]
 
 
-CANDLE_CONCURRENCY = 5
+# Two at a time, not five. Binance charges weight 4 per klines call and its
+# budget is per *IP* -- which on shared cloud egress we do not have to
+# ourselves. A five-wide burst across 14 symbols, repeated on every cold start,
+# earned a 30-minute HTTP 418 IP ban. Concurrency here buys a few seconds of
+# startup; the ban costs half an hour of empty rating axes.
+CANDLE_CONCURRENCY = 2
 
 
 async def refresh_candles(interval: str = config.CANDLE_INTERVAL,
@@ -140,7 +145,18 @@ async def run_cycle(cycle: int) -> None:
     else:
         candles = load_candles()
 
-    if cycle % config.DAILY_EVERY_N_CYCLES == 0:
+    # Daily candles are deferred off cycle 0. Both intervals refreshing on the
+    # same cold-start tick doubled the request weight at the exact moment the
+    # database was empty and every symbol needed a full pull -- which is what
+    # tripped the rate limiter. Nothing needs daily bars in the first minute:
+    # they feed the 1y/all charts, not the ratings.
+    if cycle > 0 and cycle % config.DAILY_EVERY_N_CYCLES == 0:
+        await refresh_candles(config.DAILY_INTERVAL, config.DAILY_LIMIT)
+    elif cycle == 1 and not db.query_one(
+            "SELECT 1 AS x FROM candles WHERE interval=? LIMIT 1",
+            (config.DAILY_INTERVAL,)):
+        # ...but on a genuinely empty database, fetch them one cycle later so
+        # the long-range charts are not blank until the first hourly boundary.
         await refresh_candles(config.DAILY_INTERVAL, config.DAILY_LIMIT)
 
     refresh_market = cycle % config.MARKET_EVERY_N_CYCLES == 0

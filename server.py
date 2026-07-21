@@ -690,6 +690,10 @@ async def health() -> dict[str, Any]:
         # Candle failures do not stop a cycle, but they empty three of the four
         # rating axes, so they need to be visible from outside the log.
         "candle_errors": engine.STATE.get("_candle_errors", []),
+        # Hosts currently backed off after a 429/418, with seconds remaining.
+        # Empty is the healthy state; an entry here explains missing data far
+        # faster than reading logs.
+        "rate_limited": providers.cooldowns(),
         "candles_stored": db.query_one(
             "SELECT COUNT(*) AS n FROM candles WHERE interval=?",
             (config.CANDLE_INTERVAL,))["n"],

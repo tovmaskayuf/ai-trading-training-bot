@@ -12,11 +12,12 @@ from typing import Any
 
 import config
 from providers import binance, coingecko, hyperliquid
-from providers.base import ProviderError, aclose
+from providers.base import ProviderError, aclose, cooldowns
 
 log = logging.getLogger("providers")
 
-__all__ = ["fetch_prices", "fetch_candles", "fetch_market", "aclose", "ProviderError"]
+__all__ = ["fetch_prices", "fetch_candles", "fetch_market", "fetch_book",
+           "aclose", "cooldowns", "ProviderError"]
 
 
 async def fetch_prices() -> dict[str, dict[str, Any]]:

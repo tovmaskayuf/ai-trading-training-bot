@@ -416,12 +416,11 @@ account), so live prices are unreachable from an artifact page.
   an env var (`COINGECKO_API_KEY`), not a cadence change. A *wrong* key is
   loud — 401 `error_code 10002`; a *missing* one is silent, which is why
   `/api/health` reports `coingecko_auth`.
-- **Binance klines have failed on Render while `/ticker/24hr` kept working.**
-  Presented as prices and market cap flowing while momentum, risk and relative
-  sat empty for all 14 Binance-sourced assets, with only HYPE fully rated —
-  those three axes need candles. It cleared on the next restart and the cause
-  was never proven; the concurrent `refresh_candles` burst against a shared
-  Render IP is the main suspect. `/api/health` now reports `candle_errors` and
-  `candles_stored`, so next time the error is visible rather than log-only.
-  **This is not the geo-block**: under a geo-block prices fall back to
-  CoinGecko and get flagged `stale`, and none were.
+- **Binance klines failing while `/ticker/24hr` keeps working** means a
+  rate-limit ban, not the geo-block. Confirmed cause: HTTP 418, `-1003 Way too
+  much request weight used; IP banned`. Prices survive because the ticker call
+  is one batched request; candles do not, so momentum, risk and relative empty
+  out and only HYPE stays fully rated. See *Cadence and rate limits* for the
+  three rules that came out of it. Distinguish from the geo-block by the
+  `stale` flag: under a geo-block prices fall back to CoinGecko and are flagged
+  stale, under a ban they are not.
