@@ -266,7 +266,12 @@ in the client** — a typo on a brand-new account locks the owner out of it.
 ### Administration (`admin.py`)
 
 One admin account, seeded by `ensure_master()` from `MASTER_USERNAME` /
-`MASTER_PASSWORD` at startup. **The password is never committed** — the repo is
+`MASTER_PASSWORD` at startup. **Exactly one** — `_demote_other_admins()` strips
+the flag from every other account and kills their sessions on each boot.
+Without that, changing `MASTER_USERNAME` granted admin to the new name while
+leaving it on the old one, so a former admin kept full access to every player's
+record. That happened in production. Renaming must move the privilege, never
+copy it. **The password is never committed** — the repo is
 public. With `MASTER_PASSWORD` unset no admin account is created at all, rather
 than one with a guessable password. The hash is re-applied on every boot, so
 rotating the env var rotates the credential.

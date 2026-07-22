@@ -133,6 +133,35 @@ def main() -> None:
     check("stats report totals", s["total_accounts"] >= 2)
     check("stats report the backend", s["store_backend"] in ("sqlite", "postgres"))
 
+    # --- exactly one admin, always -----------------------------------------
+    # Renaming MASTER_USERNAME must *move* the privilege. Granting it to the
+    # new name while leaving it on the old one gives a former admin permanent
+    # access to every player's data -- which is what happened in production.
+    def admin_names() -> set[str]:
+        return {r["username"] for r in userstore.query(
+            "SELECT username FROM users WHERE is_admin = 1")}
+
+    first = f"admin_a_{tag}"
+    second = f"admin_b_{tag}"
+
+    admin.MASTER_USERNAME = first
+    admin.ensure_master()
+    check("configured name is the only admin", admin_names() == {first})
+
+    admin.MASTER_USERNAME = second
+    admin.ensure_master()
+    check("RENAME LEAVES EXACTLY ONE ADMIN", admin_names() == {second},
+          f"admins={sorted(admin_names())}")
+    check("the previous admin still exists as an ordinary player",
+          userstore.query_one(
+              "SELECT id FROM users WHERE username = ?", (first,)) is not None)
+    check("the demoted account can no longer act as admin",
+          accounts.authenticate(first, "test-master-password")["is_admin"] is False)
+    check("the demoted account's sessions were revoked",
+          userstore.query(
+              "SELECT s.token FROM sessions s JOIN users u ON u.id = s.user_id "
+              "WHERE u.username = ?", (first,)) == [])
+
     print()
     if failures:
         print(f"{len(failures)} FAILURE(S): {failures}")

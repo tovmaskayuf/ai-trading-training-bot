@@ -35,6 +35,26 @@ class AdminError(ValueError):
 # --- Bootstrap -------------------------------------------------------------
 
 
+def _demote_other_admins(keep_id: int | None) -> int:
+    """Strip admin from every account except the configured one.
+
+    Without this, changing MASTER_USERNAME grants admin to the new name but
+    leaves it on the old one, so the previous holder keeps full access to every
+    player's data indefinitely. Exactly one admin is the invariant; renaming
+    must move the privilege, not copy it.
+    """
+    others = userstore.query(
+        "SELECT id, username FROM users WHERE is_admin = 1 AND id <> ?",
+        (keep_id if keep_id is not None else -1,))
+    for row in others:
+        userstore.execute("UPDATE users SET is_admin = 0 WHERE id = ?", (row["id"],))
+        # Their sessions were admin sessions; end them rather than letting an
+        # already-open console keep working until the cookie expires.
+        userstore.execute("DELETE FROM sessions WHERE user_id = ?", (row["id"],))
+        log.warning("revoked admin from %r (no longer MASTER_USERNAME)", row["username"])
+    return len(others)
+
+
 def ensure_master() -> None:
     """Create or repair the master account from the environment.
 
@@ -61,6 +81,7 @@ def ensure_master() -> None:
             "UPDATE users SET password_hash = ?, is_admin = 1, is_blocked = 0, "
             "is_guest = 0 WHERE id = ?",
             (accounts.hash_password(MASTER_PASSWORD), row["id"]))
+        _demote_other_admins(row["id"])
         log.info("master account refreshed (id=%s)", row["id"])
         return
 
@@ -80,6 +101,7 @@ def ensure_master() -> None:
         "total, realized, fees) VALUES (?,?,?,?,?,?,?,?)",
         (uid, ts, config.STARTING_CAPITAL, 0.0, 0.0,
          config.STARTING_CAPITAL, 0.0, 0.0))
+    _demote_other_admins(uid)
     log.info("master account created (id=%s)", uid)
 
 

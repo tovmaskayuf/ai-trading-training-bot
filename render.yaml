@@ -4,10 +4,19 @@
 services:
   - type: web
     # Must match the live service exactly, or a blueprint deploy provisions a
-    # second one alongside it. Hyphens are not a style choice: this name becomes
-    # the onrender.com subdomain, and underscores are not legal in a hostname
-    # (RFC 1123), so Render rewrites them to hyphens regardless.
-    name: ai-crypto-trading-training
+    # second one alongside it rather than renaming the existing one -- and the
+    # new one starts on an empty database while the old one keeps the accounts.
+    # So renaming is a two-step change, dashboard first:
+    #   1. Render dashboard -> service -> Settings -> Name
+    #   2. then this line, to match
+    # Doing it in the other order forks the deployment on the next sync.
+    #
+    # Hyphens are not a style choice: this name becomes the onrender.com
+    # subdomain, and underscores are not legal in a hostname (RFC 1123), so
+    # Render rewrites them to hyphens regardless. Matches the GitHub repo name
+    # as of 2026-07-21; renaming changes the public URL and the old one stops
+    # resolving.
+    name: ai-trading-training-bot
     runtime: python
     plan: free
     # Frankfurt, not the default Oregon: Binance's API refuses requests from
