@@ -405,7 +405,19 @@ immediately instead of via the logs.
 
 ## Deployment
 
-`render.yaml` deploys to Render's free tier (deploy-button URL in README).
+`render.yaml` deploys to Render's free tier (deploy-button URL in README). The
+web service is `ai-trading-training-bot`, matching the GitHub repo — the name
+becomes the onrender.com subdomain, so repo, service and site all read alike.
+
+**Renaming the service is dashboard-first.** `name:` in the blueprint must
+match the live service; if it does not, the next sync provisions a *second*
+service rather than renaming the existing one, and the new one comes up on an
+empty database while the old one keeps every account. Rename in the Render
+dashboard (Settings → Name), then update `render.yaml` to match. The public URL
+changes with it and the old one stops resolving. The database name is a
+separate matter: changing `tt-trading-db` provisions a **new, empty** Postgres,
+so leave it alone unless the intent really is to start over.
+
 **The region must be non-US** (`region: frankfurt` in the blueprint):
 Binance's API geo-blocks US-hosted IPs with HTTP 451, which starves 14 of 15
 assets — only HYPE survives, because Hyperliquid is not geo-blocked. This
