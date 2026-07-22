@@ -33,6 +33,31 @@ def script_blocks(html: str) -> list[str]:
     return re.findall(r"<script>(.*?)</script>", html, re.S)
 
 
+def strip_js_strings(src: str) -> str:
+    """Blank string contents, keeping the quotes and overall length.
+
+    Key names must be found in code, not inside translated prose -- Spanish
+    "no hay jugadores: …" otherwise reads as a key called `jugadores`.
+    """
+    out, i, quote = [], 0, None
+    while i < len(src):
+        c = src[i]
+        if quote:
+            if c == "\\":
+                out.append("__")
+                i += 2
+                continue
+            out.append(c if c == quote else "_")
+            if c == quote:
+                quote = None
+        else:
+            out.append(c)
+            if c in "\"'`":
+                quote = c
+        i += 1
+    return "".join(out)
+
+
 def main() -> None:
     html = HTML.read_text()
     blocks = script_blocks(html)
@@ -98,6 +123,32 @@ def main() -> None:
                 used = set(re.findall(r'data-i18n="([^"]+)"', html))
                 undef = sorted(used - base)
                 check("every data-i18n key is defined", not undef, f"undefined={undef}")
+
+                # Duplicate keys in an object literal are legal JavaScript:
+                # the last one silently wins. Editing the first occurrence then
+                # appears to do nothing, with no error anywhere.
+                dupes = {}
+                for code in keys:
+                    m = re.search(rf"\n{code}: \{{", obj)
+                    if not m:
+                        continue
+                    depth, i = 0, m.end() - 1
+                    while True:
+                        if obj[i] == "{":
+                            depth += 1
+                        elif obj[i] == "}":
+                            depth -= 1
+                            if depth == 0:
+                                break
+                        i += 1
+                    seg = strip_js_strings(obj[m.end():i])
+                    names = re.findall(r"(?:^|[\s,{])([A-Za-z_][A-Za-z0-9_]*)\s*:", seg)
+                    seen, dup = set(), set()
+                    for n in names:
+                        (dup if n in seen else seen).add(n)
+                    if dup:
+                        dupes[code] = sorted(dup)
+                check("no duplicate i18n keys", not dupes, str(dupes))
 
                 ph = set(re.findall(r'data-i18n-ph="([^"]+)"', html))
                 undef_ph = sorted(ph - base)

@@ -310,11 +310,24 @@ def delete_player(user_id: int) -> dict[str, Any]:
 
 def reset_password(user_id: int, new_password: str) -> dict[str, Any]:
     """Set a new password for a player. The only way to restore access, since
-    the existing one cannot be read."""
+    the existing one cannot be read.
+
+    Refused for the administrator. Its password is not owned by the database:
+    ensure_master() re-applies MASTER_PASSWORD on every boot, so a reset here
+    would hold only until the next restart and then revert with no warning --
+    on Render's free tier that is the next idle spin-down, minutes away. The
+    admin would be left believing they had changed a credential that had
+    already changed back. Rotate the environment variable instead.
+    """
     row = userstore.query_one(
-        "SELECT id, username, is_guest FROM users WHERE id = ?", (user_id,))
+        "SELECT id, username, is_guest, is_admin FROM users WHERE id = ?", (user_id,))
     if not row:
         raise AdminError("That player no longer exists.")
+    if row["is_admin"]:
+        raise AdminError(
+            "The administrator password comes from MASTER_PASSWORD in the "
+            "server environment. Change it there and restart -- a reset here "
+            "would be undone on the next boot.")
     if row["is_guest"]:
         raise AdminError("Guest accounts do not have a password.")
     if len(new_password or "") < accounts.MIN_PASSWORD:

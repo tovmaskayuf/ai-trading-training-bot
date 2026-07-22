@@ -374,6 +374,9 @@ live updates, light/dark themes.
   all five languages in exact key parity when adding strings.
   `data-i18n` sets `textContent`, `data-i18n-ph` sets `placeholder`; both are
   swept by `applyStatic()` and both are checked by the frontend test.
+  **Duplicate keys are legal JavaScript and the last one silently wins**, so
+  editing the first occurrence appears to do nothing. Parallel edits produced
+  three of these; the frontend test now fails on any duplicate.
   `tests/test_frontend.py` checks this by **evaluating the object in node**,
   not by regex: keys inside translated prose ("no hay jugadores: …") produced
   false mismatches when it was done textually. `t(key, vars)` does `{var}`

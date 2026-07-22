@@ -108,15 +108,30 @@ def main() -> None:
         check("reset enforces password length", True)
 
     # --- admin self-protection -------------------------------------------
+    #
+    # The password reset is refused for a different reason than block and
+    # delete. The admin's password does not live in the database at all:
+    # ensure_master() re-applies MASTER_PASSWORD on every boot, so a reset would
+    # hold only until the next restart -- minutes away on a free tier that spins
+    # down when idle -- and then revert with nothing said. Allowing it would let
+    # the operator believe they had rotated a credential that had already
+    # changed back, which is worse than refusing.
     for name, fn in [
         ("admins cannot be blocked", lambda: admin.set_blocked(boss["id"], True)),
         ("admins cannot be deleted", lambda: admin.delete_player(boss["id"])),
+        ("admin password cannot be reset from the console",
+         lambda: admin.reset_password(boss["id"], "brandnewpass1")),
     ]:
         try:
             fn()
             check(name, False)
         except admin.AdminError:
             check(name, True)
+
+    # The refusal must not have changed anything on the way out.
+    check("the admin credential still works after a refused reset",
+          accounts.authenticate(admin.MASTER_USERNAME,
+                                "test-master-password")["id"] == boss["id"])
 
     # --- guests are visitors, not players ---------------------------------
     # Trading is the visibility line: every cookie-less request mints a guest
