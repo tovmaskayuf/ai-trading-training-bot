@@ -164,6 +164,20 @@ runs one pass — `purge_stale_guests()`, `purge_expired_sessions()`,
 cadence; these are bulk deletes over indexed columns and running them per cycle
 would cost more than the rows do.
 
+**Those "indexed columns" are indexed on purpose, and the indexes are not the
+obvious ones.** Both primary keys lead on the wrong column for the maintenance
+pass: `user_equity` is keyed `(user_id, ts)` and `sessions` on `token`, so
+`prune_equity()`'s `WHERE ts < ?` and `purge_expired_sessions()`'s expiry sweep
+each degraded into a full scan of the table. `idx_user_equity_ts` and
+`idx_sessions_expires` exist for exactly those two deletes — measured at 19.55ms
+scanning vs 0.86ms seeking over 1.08M equity rows, and the scan grows with the
+table while the seek does not. This costs more than it looks: every statement
+in this module runs under one process-wide lock, so a slow maintenance delete
+blocks every concurrent request, not just itself. Note the index is a genuine
+*loss* on a delete that removes a large fraction of the table (77ms scanning vs
+168ms indexed when trimming a third) — the hourly steady-state prune, which
+removes one cycle's worth past the boundary, is the case being optimised for.
+
 The thing that made this urgent: **every cookie-less request mints a guest
 row**, so crawlers, uptime probes and one-off page loads each left one behind
 permanently, and each was charged an equity row every cycle forever —
@@ -241,6 +255,14 @@ point for every portfolio in a single bulk pass for the same reason.
 `leaderboard()` marks every player to the **same live prices at read time**
 rather than reading stored equity rows — otherwise whoever traded most recently
 would rank on the freshest valuation. Guests are excluded.
+
+It publishes `starting_capital` and `pnl` alongside the total, and the board
+shows profit rather than the raw balance, because **players choose their own
+opening balance on the landing screen**. A bare total is not a score under that
+rule: someone who opened with $10M and never traded outranks a player who
+doubled $1,000. Profit is zero for an untouched account at any size, and the
+ranking itself is by percentage return. Keep the money column honest if you
+add sort modes here.
 
 `trading/manual.py` is the retired single-portfolio version, kept only because
 `tests/test_manual.py` still covers its accounting.
@@ -336,11 +358,19 @@ live updates, light/dark themes.
   `is_admin`. That is cosmetic — the real enforcement is server-side, where
   every `/api/admin/*` route 404s for non-admins. Never let the client's flag
   become the thing that gates access.
+- **The admin player view is a drawer, not an `alert()`.** It reuses the trade
+  drawer's slot (`.dr-*` styles) to show a stats grid, equity curve, holdings
+  and recent trades. `alert()` was the original and is not an option to go back
+  to: after a couple of dialogs browsers offer "prevent additional dialogs",
+  and once the user ticks it the action silently does nothing — plus a dialog
+  cannot render the chart. The equity curve is drawn inside
+  `requestAnimationFrame` after the `innerHTML` write, or the SVG has no
+  measurable width yet and the line comes out empty.
 - **Header layout**: the live/cycle status pill sits between the brand and the
   view tabs, held there by a `.header-gap` spacer on each side. It is
   deliberately *not* centred on the viewport — the right-hand cluster is wider
   than the brand, so a true centre reads as closer to the tabs than the logo.
-- **i18n**: `I18N` dict with `en`/`hy`/`uk`/`es`/`el`, 196 keys each — keep
+- **i18n**: `I18N` dict with `en`/`hy`/`uk`/`es`/`el`, 210 keys each — keep
   all five languages in exact key parity when adding strings.
   `data-i18n` sets `textContent`, `data-i18n-ph` sets `placeholder`; both are
   swept by `applyStatic()` and both are checked by the frontend test.
