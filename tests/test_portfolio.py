@@ -118,6 +118,21 @@ def main() -> None:
     check("guests are excluded from the leaderboard", guest["id"] not in guest_ids)
     check("guest still gets a working portfolio", pf.cash(guest["id"]) == 10_000)
 
+    # The master account gets a portfolio from ensure_master() like anyone
+    # else, so without an is_admin filter the operator ranks against the
+    # players they administer. It holds BTC here so the holdings join is
+    # covered too, not just the user row.
+    admin = accounts.create_user(f"master_{tag}", "password12345", 10_000)
+    userstore.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (admin["id"],))
+    pf.buy(admin["id"], "BTC", 100.0, 50, usd=5000)
+    admin_board = pf.leaderboard({"BTC": 200.0})
+    check("admins are excluded from the leaderboard",
+          admin["id"] not in {r["user_id"] for r in admin_board})
+    check("excluding the admin does not drop other players",
+          {A, B} <= {r["user_id"] for r in admin_board})
+    check("admin still gets a working portfolio",
+          pf.snapshot(admin["id"], {"BTC": 200.0})["trade_count"] == 1)
+
     # --- Claiming a guest keeps its progress ---
     pf.buy(guest["id"], "BTC", 100.0, 40, usd=2500)
     before = pf.snapshot(guest["id"], {"BTC": 100.0})

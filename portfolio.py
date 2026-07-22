@@ -425,17 +425,21 @@ def leaderboard(prices: dict[str, float], limit: int = 100) -> list[dict[str, An
     the ranking reflects the current market for everyone simultaneously --
     otherwise whoever traded most recently would have the freshest valuation.
     Guests are excluded: they are anonymous and would clutter the board.
+    Administrators are excluded too: the master account exists to run the game,
+    and ensure_master() hands it a portfolio like anyone else, so without this
+    the operator shows up ranked against the players they administer.
     """
     rows = userstore.query(
         "SELECT u.id, u.display_name, p.cash, p.starting_capital "
         "FROM users u JOIN portfolios p ON p.user_id = u.id "
-        "WHERE u.is_guest = 0")
+        "WHERE u.is_guest = 0 AND u.is_admin = 0")
     if not rows:
         return []
 
     all_holdings = userstore.query(
         "SELECT h.user_id, h.symbol, h.qty, h.avg_cost FROM holdings h "
-        "JOIN users u ON u.id = h.user_id WHERE u.is_guest = 0 AND h.qty > 0")
+        "JOIN users u ON u.id = h.user_id "
+        "WHERE u.is_guest = 0 AND u.is_admin = 0 AND h.qty > 0")
     by_user: dict[int, list[dict[str, Any]]] = {}
     for h in all_holdings:
         by_user.setdefault(h["user_id"], []).append(h)
